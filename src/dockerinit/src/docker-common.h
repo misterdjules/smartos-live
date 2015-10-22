@@ -93,7 +93,13 @@ typedef enum {
     ERR_MDATA_TOO_OLD,
     ERR_UNLINK_MTAB,
     ERR_NO_MEMORY,
-    ERR_MKDIR
+    ERR_MKDIR,
+    ERR_UNKNOWN_LOG_DRIVER,
+    ERR_OPEN_ZFD,
+    ERR_STAT_ZFD,
+    ERR_IOCTL_ZFD,
+    ERR_DUP2,
+    ERR_CONTRACT
 } dockerinit_err_t;
 
 typedef enum {

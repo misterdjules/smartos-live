@@ -23,16 +23,26 @@ var PAYLOADS = {
     create: {
         alias: 'test-update-' + process.pid,
         image_uuid: image_uuid,
-        do_not_inventory: true
+        do_not_inventory: true,
+        cpu_cap: 1600
     }, add_net0: {
         add_nics: [
             {
                 ip: '10.254.254.254',
+                ips: ['10.254.254.254/24'],
                 netmask: '255.255.255.0',
                 nic_tag: 'external',
                 interface: 'net0',
                 vlan_id: 0,
                 gateway: '10.254.254.1',
+                gateways: ['10.254.254.1'],
+                mac: '01:02:03:04:05:06'
+            }
+        ]
+    }, update_net0: {
+        update_nics: [
+            {
+                ips: ['10.254.254.254/24', 'fd00::1/64', 'addrconf'],
                 mac: '01:02:03:04:05:06'
             }
         ]
@@ -62,19 +72,23 @@ var PAYLOADS = {
         add_nics: [
             {
                 ip: '10.254.254.254',
+                ips: ['10.254.254.254/24'],
                 netmask: '255.255.255.0',
                 nic_tag: 'external',
                 interface: 'net0',
                 vlan_id: 0,
                 gateway: '10.254.254.1',
+                gateways: ['10.254.254.1'],
                 mac: '01:02:03:04:05:06'
             }, {
                 ip: '10.254.254.253',
+                ips: ['10.254.254.253/24'],
                 netmask: '255.255.255.0',
                 nic_tag: 'external',
                 interface: 'net1',
                 vlan_id: 253,
                 gateway: '10.254.254.1',
+                gateways: ['10.254.254.1'],
                 mac: '02:03:04:05:06:07'
             }
         ]
@@ -164,6 +178,8 @@ var PAYLOADS = {
         max_sem_ids: 2332,
         max_shm_ids: 2345,
         max_shm_memory: 1234
+    }, remove_cpu_cap: {
+        cpu_cap: 0
     }
 };
 
@@ -195,7 +211,6 @@ test('add net0', function (t) {
             t.end();
         } else {
             VM.load(vm_uuid, function (err, obj) {
-                var failures = 0;
                 var field;
 
                 if (err) {
@@ -209,18 +224,49 @@ test('add net0', function (t) {
                             // the obj
                             continue;
                         }
-                        if (obj.nics[0][field]
-                            !== PAYLOADS.add_net0.add_nics[0][field]) {
-
-                            t.ok(false, 'failed to set ' + field + ', was ['
-                                + obj.nics[0][field] + '], expected ['
-                                + PAYLOADS.add_net0.add_nics[0][field] + ']');
-                            failures++;
-                        }
+                        t.deepEqual(obj.nics[0][field],
+                            PAYLOADS.add_net0.add_nics[0][field],
+                            'failed to set ' + field
+                            + ', was ' + JSON.stringify(obj.nics[0][field])
+                            + ', expected '
+                            + JSON.stringify(
+                                PAYLOADS.add_net0.add_nics[0][field]));
                     }
                 }
-                if (failures === 0) {
-                    t.ok(true, 'updated VM: ' + vm_uuid);
+                t.end();
+            });
+        }
+    });
+});
+
+test('add IPv6 to net0', function (t) {
+    VM.update(vm_uuid, PAYLOADS.update_net0, function (update_err) {
+        if (update_err) {
+            t.ok(false, 'error updating VM: ' + update_err.message);
+            t.end();
+        } else {
+            VM.load(vm_uuid, function (err, obj) {
+                var field;
+
+                if (err) {
+                    t.ok(false, 'failed reloading VM');
+                } else if (obj.nics.length !== 1) {
+                    t.ok(false, 'VM has ' + obj.nics.length + ' != 1 nics');
+                } else {
+                    for (field in PAYLOADS.update_net0.update_nics[0]) {
+                        if (field === 'physical') {
+                            // physical is a property that gets added but not in
+                            // the obj
+                            continue;
+                        }
+                        t.deepEqual(obj.nics[0][field],
+                            PAYLOADS.update_net0.update_nics[0][field],
+                            'failed to set ' + field
+                            + ', was ' + JSON.stringify(obj.nics[0][field])
+                            + ', expected '
+                            + JSON.stringify(
+                                PAYLOADS.update_net0.update_nics[0][field]));
+                    }
                 }
                 t.end();
             });
@@ -290,7 +336,6 @@ test('add net0 and net1', function (t) {
             t.end();
         } else {
             VM.load(vm_uuid, function (err, obj) {
-                var failures = 0;
                 var field;
                 var nic;
 
@@ -312,17 +357,18 @@ test('add net0 and net1', function (t) {
                                 !== PAYLOADS.add_net0_and_net1
                                 .add_nics[nic][field]) {
 
-                                t.ok(false, 'failed to set ' + field + ', was ['
-                                    + obj.nics[nic][field] + '], expected ['
-                                    + PAYLOADS.add_net0_and_net1
-                                    .add_nics[nic][field] + ']');
-                                failures++;
+                                t.deepEqual(obj.nics[nic][field],
+                                    PAYLOADS.add_net0_and_net1
+                                        .add_nics[nic][field],
+                                    'failed to set ' + field
+                                    + ', was '
+                                    + JSON.stringify(obj.nics[nic][field])
+                                    + ', expected '
+                                    + JSON.stringify(PAYLOADS.add_net0_and_net1
+                                        .add_nics[nic][field]));
                             }
                         }
                     }
-                }
-                if (failures === 0) {
-                    t.ok(true, 'updated VM: ' + vm_uuid);
                 }
                 t.end();
             });
@@ -511,7 +557,7 @@ test('add NIC with minimal properties', function (t) {
                     + ' nics, expected: 1');
                 nic = obj.nics[0];
                 for (prop in nic) {
-                    t.ok((['interface', 'mac', 'nic_tag', 'ip']
+                    t.ok((['interface', 'mac', 'nic_tag', 'ip', 'ips']
                         .indexOf(prop) !== -1), 'prop is expected: ' + prop);
                     t.ok(nic[prop] !== 'undefined', 'prop ' + prop
                         + ' is not undefined');
@@ -1009,6 +1055,39 @@ test('update shm rctls', function (t) {
                     t.equal(after_obj[k], PAYLOADS.set_rctls[k], k + ' value '
                         + 'after test: ' + after_obj[k]);
                 });
+                t.end();
+            });
+        });
+    });
+});
+
+test('remove cpu_cap', function (t) {
+    var payload_copy = JSON.parse(JSON.stringify(PAYLOADS.remove_cpu_cap));
+
+    VM.load(vm_uuid, function (err, before_obj) {
+        if (err) {
+            t.ok(false, 'loading VM (before): ' + err.message);
+            t.end();
+            return;
+        }
+
+        t.equal(before_obj.cpu_cap, 1600, 'cpu_cap is 1600 to start');
+
+        VM.update(vm_uuid, payload_copy, function (up_err) {
+            if (up_err) {
+                t.ok(false, 'updating VM: ' + up_err.message);
+                t.end();
+                return;
+            }
+
+            VM.load(vm_uuid, function (l_err, after_obj) {
+                if (l_err) {
+                    t.ok(false, 'loading VM (after): ' + l_err.message);
+                    t.end();
+                    return;
+                }
+
+                t.equal(after_obj.cpu_cap, undefined, 'cpu_cap is gone');
                 t.end();
             });
         });
